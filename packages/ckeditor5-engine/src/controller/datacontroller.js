@@ -17,7 +17,7 @@ import DowncastDispatcher from '../conversion/downcastdispatcher';
 import { insertText } from '../conversion/downcasthelpers';
 
 import UpcastDispatcher from '../conversion/upcastdispatcher';
-import { convertText, convertToModelFragment } from '../conversion/upcasthelpers';
+import { convertText, convertToModelFragment, convertAttributeToMarker, convertElementToMarker } from '../conversion/upcasthelpers';
 
 import ViewDocumentFragment from '../view/documentfragment';
 import ViewDocument from '../view/document';
@@ -122,7 +122,7 @@ export default class DataController {
 		 */
 		this._viewWriter = new ViewDowncastWriter( this.viewDocument );
 
-		// Define default converters for text and elements.
+		// Define default converters for text, elements and markers.
 		//
 		// Note that if there is no default converter for the element it will be skipped, for instance `<b>foo</b>` will be
 		// converted to nothing. We add `convertToModelFragment` as a last converter so it converts children of that
@@ -130,6 +130,8 @@ export default class DataController {
 		this.upcastDispatcher.on( 'text', convertText(), { priority: 'lowest' } );
 		this.upcastDispatcher.on( 'element', convertToModelFragment(), { priority: 'lowest' } );
 		this.upcastDispatcher.on( 'documentFragment', convertToModelFragment(), { priority: 'lowest' } );
+		this.upcastDispatcher.on( 'element', convertAttributeToMarker(), { priority: 'lowest' } );
+		this.upcastDispatcher.on( 'element', convertElementToMarker(), { priority: 'lowest' } );
 
 		this.decorate( 'init' );
 

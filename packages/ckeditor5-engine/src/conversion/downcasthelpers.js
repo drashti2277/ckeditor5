@@ -299,6 +299,10 @@ export default class DowncastHelpers extends ConversionHelpers {
 		return this.add( downcastMarkerToElement( config ) );
 	}
 
+	markerToData( config ) {
+		return this.add( downcastMarkerToData( config ) );
+	}
+
 	/**
 	 * Model marker to highlight conversion helper.
 	 *
@@ -755,6 +759,129 @@ function removeUIElement() {
 	};
 }
 
+/**
+ * Function factory that creates a default converter for model markers.
+ *
+ * Markers in the view are represented in two ways:
+ *
+ * * if the marker boundary is before or after a view container element, then `data-marker-start` or `data-marker-end` attribute is
+ * set on that view element,
+ * * in other case, `ck-marker` view element with `data-name` attribute is added at the marker boundary.
+ *
+ * This converter binds created UI elements with the marker name using {@link module:engine/conversion/mapper~Mapper#bindElementToMarker}.
+ *
+ * @protected
+ * @returns {Function} Add marker converter.
+ */
+function insertMarkerData() {
+	return ( evt, data, conversionApi ) => {
+		const markerRange = data.markerRange;
+
+		// Marker that is collapsed has consumable build differently that non-collapsed one.
+		// For more information see `addMarker` event description.
+		// If marker's range is collapsed - check if it can be consumed.
+		if ( markerRange.isCollapsed && !conversionApi.consumable.consume( markerRange, evt.name ) ) {
+			return;
+		}
+
+		// If marker's range is not collapsed - consume all items inside.
+		for ( const value of markerRange ) {
+			if ( !conversionApi.consumable.consume( value.item, evt.name ) ) {
+				return;
+			}
+		}
+
+		const mapper = conversionApi.mapper;
+		const viewWriter = conversionApi.writer;
+
+		const startViewPosition = mapper.toViewPosition( markerRange.start );
+
+		if ( startViewPosition.nodeAfter && startViewPosition.nodeAfter.is( 'containerElement' ) ) {
+			insertMarkerAsAttribute( startViewPosition, true );
+		} else {
+			insertMarkerAsElement( startViewPosition );
+		}
+
+		// Add "closing" data only if range is not collapsed.
+		if ( !markerRange.isCollapsed ) {
+			const endViewPosition = mapper.toViewPosition( markerRange.end );
+
+			if ( endViewPosition.nodeBefore && endViewPosition.nodeBefore.is( 'containerElement' ) ) {
+				insertMarkerAsAttribute( endViewPosition, true );
+			} else {
+				insertMarkerAsElement( endViewPosition );
+			}
+		}
+
+		evt.stop();
+
+		function insertMarkerAsAttribute( position, isStart ) {
+			const attributeName = isStart ? 'data-marker-start' : 'data-marker-end';
+			const viewElement = isStart ? position.nodeAfter : position.nodeBefore;
+
+			let markerNames = [];
+
+			if ( viewElement.hasAttribute( attributeName ) ) {
+				markerNames = viewWriter.getAttribute( attributeName ).split( ',' );
+			}
+
+			markerNames.push( data.markerName );
+
+			viewWriter.setAttribute( attributeName, markerNames.join( ',' ), viewElement );
+			conversionApi.mapper.bindElementToMarker( viewElement, data.markerName );
+		}
+
+		function insertMarkerAsElement( position ) {
+			const viewElement = viewWriter.createUIElement( 'ck-marker', { 'data-name': data.markerName } );
+
+			viewWriter.insert( position, viewElement );
+			conversionApi.mapper.bindElementToMarker( viewElement, data.markerName );
+		}
+	};
+}
+
+/**
+ * Function factory that creates a default converter for removing a model marker that was added by {@link #insertMarkerData} converter.
+ *
+ * @protected
+ * @returns {Function} Remove marker converter.
+ */
+function removeMarkerData() {
+	return ( evt, data, conversionApi ) => {
+		const elements = conversionApi.mapper.markerNameToElements( data.markerName );
+
+		if ( !elements ) {
+			return;
+		}
+
+		for ( const element of elements ) {
+			conversionApi.mapper.unbindElementFromMarkerName( element, data.markerName );
+
+			if ( element.is( 'containerElement' ) ) {
+				removeMarkerFromAttribute( 'data-marker-start', element );
+				removeMarkerFromAttribute( 'data-marker-end', element );
+			} else if ( element.name == 'ck-marker' ) {
+				conversionApi.writer.clear( conversionApi.writer.createRangeOn( element ), element );
+			}
+		}
+
+		conversionApi.writer.clearClonedElementsGroup( data.markerName );
+
+		evt.stop();
+
+		function removeMarkerFromAttribute( attributeName, element ) {
+			if ( element.hasAttribute( attributeName ) ) {
+				const markerNames = new Set( element.getAttribute( attributeName ).split( ',' ) );
+				markerNames.delete( data.markerName );
+
+				if ( markerNames.size == 0 ) {
+					conversionApi.writer.removeAttribute( attributeName, element );
+				}
+			}
+		}
+	};
+}
+
 // Function factory that creates a converter which converts set/change/remove attribute changes from the model to the view.
 //
 // Attributes from the model are converted to the view element attributes in the view. You may provide a custom function to generate
@@ -1176,6 +1303,15 @@ function downcastMarkerToElement( config ) {
 	return dispatcher => {
 		dispatcher.on( 'addMarker:' + config.model, insertUIElement( config.view ), { priority: config.converterPriority || 'normal' } );
 		dispatcher.on( 'removeMarker:' + config.model, removeUIElement( config.view ), { priority: config.converterPriority || 'normal' } );
+	};
+}
+
+function downcastMarkerToData( config ) {
+	config = cloneDeep( config );
+
+	return dispatcher => {
+		dispatcher.on( 'addMarker:' + config.model, insertMarkerData( config.view ), { priority: config.converterPriority || 'normal' } );
+		dispatcher.on( 'removeMarker:' + config.model, removeMarkerData( config.view ), { priority: config.converterPriority || 'normal' } );
 	};
 }
 

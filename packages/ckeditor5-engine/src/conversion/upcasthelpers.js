@@ -416,6 +416,51 @@ export function convertSelectionChange( model, mapper ) {
 	};
 }
 
+/**
+ * Function factory, returns a callback function which is a default converter for markers.
+ *
+ * The converter looks for `ck-marker` view elements and converts them to `$marker` model elements.
+ *
+ * @returns {Function} Marker converter.
+ */
+export function convertElementToMarker() {
+	return prepareToElementConverter( {
+		view: 'ck-marker',
+		model: ( viewElement, modelWriter ) => {
+			return modelWriter.createElement( '$marker', { 'data-name': viewElement.getAttribute( 'data-name' ) } );
+		}
+	} );
+}
+
+/**
+ * Function factory, returns a callback function which is a default converter for markers.
+ *
+ * The converter looks for elements with `data-marker-start` and `data-marker-end` elements and inserts `$marker` model
+ * elements before/after those elements.
+ *
+ * @returns {Function} Marker converter.
+ */
+export function convertAttributeToMarker() {
+	return ( evt, data, conversionApi ) => {
+		if ( conversionApi.consumable.consume( data.viewItem, { attributes: 'data-marker-end' } ) ) {
+			addMarkerElements( data.modelRange.end, data.viewItem.getAttribute( 'data-marker-end' ).split( ',' ) );
+		}
+
+		if ( conversionApi.consumable.consume( data.viewItem, { attributes: 'data-marker-start' } ) ) {
+			addMarkerElements( data.modelRange.start, data.viewItem.getAttribute( 'data-marker-start' ).split( ',' ) );
+		}
+
+		function addMarkerElements( position, markerNames ) {
+			for ( const markerName of markerNames ) {
+				const element = conversionApi.writer.createElement( '$marker', { 'data-name': markerName } );
+
+				conversionApi.writer.insert( element, position );
+				data.modelCursor = data.modelCursor.getShiftedBy( 1 );
+			}
+		}
+	};
+}
+
 // View element to model element conversion helper.
 //
 // See {@link ~UpcastHelpers#elementToElement `.elementToElement()` upcast helper} for examples.
@@ -509,7 +554,7 @@ function upcastAttributeToAttribute( config ) {
 // a model marker name.
 // @param {module:utils/priorities~PriorityString} [config.converterPriority='normal'] Converter priority.
 // @returns {Function} Conversion helper.
-function upcastElementToMarker( config ) {
+export function upcastElementToMarker( config ) {
 	config = cloneDeep( config );
 
 	normalizeToMarkerConfig( config );
