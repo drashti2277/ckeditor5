@@ -299,10 +299,6 @@ export default class DowncastHelpers extends ConversionHelpers {
 		return this.add( downcastMarkerToElement( config ) );
 	}
 
-	markerToData( config ) {
-		return this.add( downcastMarkerToData( config ) );
-	}
-
 	/**
 	 * Model marker to highlight conversion helper.
 	 *
@@ -773,7 +769,7 @@ function removeUIElement() {
  * @protected
  * @returns {Function} Add marker converter.
  */
-function insertMarkerData() {
+export function insertMarkerData() {
 	return ( evt, data, conversionApi ) => {
 		const markerRange = data.markerRange;
 
@@ -846,7 +842,7 @@ function insertMarkerData() {
  * @protected
  * @returns {Function} Remove marker converter.
  */
-function removeMarkerData() {
+export function removeMarkerData() {
 	return ( evt, data, conversionApi ) => {
 		const elements = conversionApi.mapper.markerNameToElements( data.markerName );
 
