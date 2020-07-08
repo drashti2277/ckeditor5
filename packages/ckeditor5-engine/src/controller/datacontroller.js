@@ -130,8 +130,6 @@ export default class DataController {
 		this.upcastDispatcher.on( 'text', convertText(), { priority: 'lowest' } );
 		this.upcastDispatcher.on( 'element', convertToModelFragment(), { priority: 'lowest' } );
 		this.upcastDispatcher.on( 'documentFragment', convertToModelFragment(), { priority: 'lowest' } );
-		this.upcastDispatcher.on( 'element', convertAttributeToMarker(), { priority: 'lowest' } );
-		this.upcastDispatcher.on( 'element', convertElementToMarker(), { priority: 'lowest' } );
 
 		this.decorate( 'init' );
 

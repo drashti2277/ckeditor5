@@ -332,6 +332,10 @@ export default class UpcastHelpers extends ConversionHelpers {
 	elementToMarker( config ) {
 		return this.add( upcastElementToMarker( config ) );
 	}
+
+	dataToMarker( config ) {
+		return this.add( upcastDataToMarker( config ) );
+	}
 }
 
 /**
@@ -419,43 +423,39 @@ export function convertSelectionChange( model, mapper ) {
 /**
  * Function factory, returns a callback function which is a default converter for markers.
  *
- * The converter looks for `ck-marker` view elements and converts them to `$marker` model elements.
- *
- * @returns {Function} Marker converter.
- */
-export function convertElementToMarker() {
-	return prepareToElementConverter( {
-		view: 'ck-marker',
-		model: ( viewElement, modelWriter ) => {
-			return modelWriter.createElement( '$marker', { 'data-name': viewElement.getAttribute( 'data-name' ) } );
-		}
-	} );
-}
-
-/**
- * Function factory, returns a callback function which is a default converter for markers.
- *
  * The converter looks for elements with `data-marker-start` and `data-marker-end` elements and inserts `$marker` model
  * elements before/after those elements.
  *
  * @returns {Function} Marker converter.
  */
-export function convertAttributeToMarker() {
+function convertAttributeToMarker( config ) {
 	return ( evt, data, conversionApi ) => {
-		if ( conversionApi.consumable.consume( data.viewItem, { attributes: 'data-marker-end' } ) ) {
-			addMarkerElements( data.modelRange.end, data.viewItem.getAttribute( 'data-marker-end' ).split( ',' ) );
+		const attrName = `data-${ config.view }`;
+
+		config.model = config.model || ( name => config.view + ':' + name );
+
+		if ( conversionApi.consumable.consume( data.viewItem, { attributes: attrName + '-end' } ) ) {
+			addMarkerElements( data.modelRange.end, data.viewItem.getAttribute( attrName + '-end' ).split( ',' ) );
 		}
 
-		if ( conversionApi.consumable.consume( data.viewItem, { attributes: 'data-marker-start' } ) ) {
-			addMarkerElements( data.modelRange.start, data.viewItem.getAttribute( 'data-marker-start' ).split( ',' ) );
+		if ( conversionApi.consumable.consume( data.viewItem, { attributes: attrName + '-start' } ) ) {
+			addMarkerElements( data.modelRange.start, data.viewItem.getAttribute( attrName + '-start' ).split( ',' ) );
 		}
 
-		function addMarkerElements( position, markerNames ) {
-			for ( const markerName of markerNames ) {
+		function addMarkerElements( position, markerViewNames ) {
+			for ( const markerViewName of markerViewNames ) {
+				const markerName = config.model( markerViewName );
 				const element = conversionApi.writer.createElement( '$marker', { 'data-name': markerName } );
 
 				conversionApi.writer.insert( element, position );
-				data.modelCursor = data.modelCursor.getShiftedBy( 1 );
+
+				if ( data.modelCursor.isEqual( position ) ) {
+					data.modelCursor = data.modelCursor.getShiftedBy( 1 );
+				} else {
+					data.modelCursor = data.modelCursor._getTransformedByInsertion( position, 1 );
+				}
+
+				data.modelRange = data.modelRange._getTransformedByInsertion( position, 1 )[ 0 ];
 			}
 		}
 	};
@@ -560,6 +560,20 @@ export function upcastElementToMarker( config ) {
 	normalizeToMarkerConfig( config );
 
 	return upcastElementToElement( config );
+}
+
+function upcastDataToMarker( config ) {
+	config = cloneDeep( config );
+
+	const converterStart = prepareToElementConverter( normalizeDataToMarkerConfig( config, 'start' ) );
+	const converterEnd = prepareToElementConverter( normalizeDataToMarkerConfig( config, 'end' ) );
+
+	return dispatcher => {
+		dispatcher.on( 'element:' + config.view + '-start', converterStart, { priority: config.converterPriority || 'normal' } );
+		dispatcher.on( 'element:' + config.view + '-end', converterEnd, { priority: config.converterPriority || 'normal' } );
+
+		dispatcher.on( 'element', convertAttributeToMarker( config ), { priority: config.converterPriority || 'normal' } );
+	};
 }
 
 // Helper function for from-view-element conversion. Checks if `config.view` directly specifies converted view element's name
@@ -824,7 +838,7 @@ function setAttributeOn( modelRange, modelAttribute, shallow, conversionApi ) {
 }
 
 // Helper function for upcasting-to-marker conversion. Takes the config in a format requested by `upcastElementToMarker()`
-// function and converts it to a format that is supported by `_upcastElementToElement()` function.
+// function and converts it to a format that is supported by `upcastElementToElement()` function.
 //
 // @param {Object} config Conversion configuration.
 function normalizeToMarkerConfig( config ) {
@@ -835,4 +849,21 @@ function normalizeToMarkerConfig( config ) {
 
 		return modelWriter.createElement( '$marker', { 'data-name': markerName } );
 	};
+}
+
+function normalizeDataToMarkerConfig( config, type ) {
+	const configForElements = {};
+
+	configForElements.view = config.view + '-' + type;
+
+	const modelCallback = config.model || ( name => config.view + ':' + name );
+
+	configForElements.model = ( viewElement, modelWriter ) => {
+		const viewName = viewElement.getAttribute( 'name' );
+		const markerName = modelCallback( viewName );
+
+		return modelWriter.createElement( '$marker', { 'data-name': markerName } );
+	};
+
+	return configForElements;
 }

@@ -500,7 +500,7 @@ function createContextTree( contextDefinition, writer ) {
 			writer.append( current, position );
 		}
 
-		position = ModelPosition._createAt( current, 0 );
+		position = ModelPosition._createAt( current, 0, 'toNext' );
 	}
 
 	return position;

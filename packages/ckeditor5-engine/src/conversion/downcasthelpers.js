@@ -357,6 +357,10 @@ export default class DowncastHelpers extends ConversionHelpers {
 	markerToHighlight( config ) {
 		return this.add( downcastMarkerToHighlight( config ) );
 	}
+
+	markerToData( config ) {
+		return this.add( downcastMarkerToData( config ) );
+	}
 }
 
 /**
@@ -769,8 +773,14 @@ function removeUIElement() {
  * @protected
  * @returns {Function} Add marker converter.
  */
-export function insertMarkerData() {
+export function insertMarkerData( dataCreator ) {
 	return ( evt, data, conversionApi ) => {
+		const dataToSave = dataCreator( data.markerName );
+
+		if ( !dataToSave ) {
+			return;
+		}
+
 		const markerRange = data.markerRange;
 
 		// Marker that is collapsed has consumable build differently that non-collapsed one.
@@ -790,45 +800,41 @@ export function insertMarkerData() {
 		const mapper = conversionApi.mapper;
 		const viewWriter = conversionApi.writer;
 
-		const startViewPosition = mapper.toViewPosition( markerRange.start );
-
-		if ( startViewPosition.nodeAfter && startViewPosition.nodeAfter.is( 'containerElement' ) ) {
-			insertMarkerAsAttribute( startViewPosition, true );
-		} else {
-			insertMarkerAsElement( startViewPosition );
-		}
-
-		// Add "closing" data only if range is not collapsed.
-		if ( !markerRange.isCollapsed ) {
-			const endViewPosition = mapper.toViewPosition( markerRange.end );
-
-			if ( endViewPosition.nodeBefore && endViewPosition.nodeBefore.is( 'containerElement' ) ) {
-				insertMarkerAsAttribute( endViewPosition, true );
-			} else {
-				insertMarkerAsElement( endViewPosition );
-			}
-		}
+		handleMarkerBoundary( markerRange, true );
+		handleMarkerBoundary( markerRange, false );
 
 		evt.stop();
 
-		function insertMarkerAsAttribute( position, isStart ) {
-			const attributeName = isStart ? 'data-marker-start' : 'data-marker-end';
-			const viewElement = isStart ? position.nodeAfter : position.nodeBefore;
+		function handleMarkerBoundary( range, isStart ) {
+			const modelPosition = isStart ? range.start : range.end;
+			const viewPosition = mapper.toViewPosition( modelPosition );
+			const viewElement = isStart ? viewPosition.nodeAfter : viewPosition.nodeBefore;
+
+			if ( viewElement && viewElement.is( 'containerElement' ) ) {
+				insertMarkerAsAttribute( viewElement, isStart );
+			} else {
+				insertMarkerAsElement( viewPosition, isStart );
+			}
+		}
+
+		function insertMarkerAsAttribute( viewElement, isStart ) {
+			const attributeName = isStart ? `data-${ dataToSave.group }-start` : `data-${ dataToSave.group }-end`;
 
 			let markerNames = [];
 
 			if ( viewElement.hasAttribute( attributeName ) ) {
-				markerNames = viewWriter.getAttribute( attributeName ).split( ',' );
+				markerNames = viewElement.getAttribute( attributeName ).split( ',' );
 			}
 
-			markerNames.push( data.markerName );
+			markerNames.push( dataToSave.name );
 
 			viewWriter.setAttribute( attributeName, markerNames.join( ',' ), viewElement );
 			conversionApi.mapper.bindElementToMarker( viewElement, data.markerName );
 		}
 
-		function insertMarkerAsElement( position ) {
-			const viewElement = viewWriter.createUIElement( 'ck-marker', { 'data-name': data.markerName } );
+		function insertMarkerAsElement( position, isStart ) {
+			const viewElementName = isStart ? `${ dataToSave.group }-start` : `${ dataToSave.group }-end`;
+			const viewElement = viewWriter.createUIElement( viewElementName, { 'name': dataToSave.name } );
 
 			viewWriter.insert( position, viewElement );
 			conversionApi.mapper.bindElementToMarker( viewElement, data.markerName );
@@ -842,8 +848,14 @@ export function insertMarkerData() {
  * @protected
  * @returns {Function} Remove marker converter.
  */
-export function removeMarkerData() {
+export function removeMarkerData( dataCreator ) {
 	return ( evt, data, conversionApi ) => {
+		const dataToSave = dataCreator( data.markerName );
+
+		if ( !dataToSave ) {
+			return;
+		}
+
 		const elements = conversionApi.mapper.markerNameToElements( data.markerName );
 
 		if ( !elements ) {
@@ -854,9 +866,9 @@ export function removeMarkerData() {
 			conversionApi.mapper.unbindElementFromMarkerName( element, data.markerName );
 
 			if ( element.is( 'containerElement' ) ) {
-				removeMarkerFromAttribute( 'data-marker-start', element );
-				removeMarkerFromAttribute( 'data-marker-end', element );
-			} else if ( element.name == 'ck-marker' ) {
+				removeMarkerFromAttribute( `data-${ dataToSave.group }-start`, element );
+				removeMarkerFromAttribute( `data-${ dataToSave.group }-end`, element );
+			} else {
 				conversionApi.writer.clear( conversionApi.writer.createRangeOn( element ), element );
 			}
 		}
@@ -1305,6 +1317,8 @@ function downcastMarkerToElement( config ) {
 function downcastMarkerToData( config ) {
 	config = cloneDeep( config );
 
+	normalizeMarkerToDataConfig( config );
+
 	return dispatcher => {
 		dispatcher.on( 'addMarker:' + config.model, insertMarkerData( config.view ), { priority: config.converterPriority || 'normal' } );
 		dispatcher.on( 'removeMarker:' + config.model, removeMarkerData( config.view ), { priority: config.converterPriority || 'normal' } );
@@ -1430,6 +1444,15 @@ function normalizeToAttributeConfig( view ) {
 	} else {
 		// function.
 		return view;
+	}
+}
+
+function normalizeMarkerToDataConfig( config ) {
+	if ( !config.view ) {
+		config.view = markerName => ( {
+			group: config.model,
+			name: markerName.substr( config.model.length + 1 )
+		} );
 	}
 }
 
